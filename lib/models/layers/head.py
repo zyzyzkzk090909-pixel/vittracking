@@ -134,11 +134,11 @@ class CenterPredictor(nn.Module, ):
 
         # assert gt_score_map is None
         if gt_score_map is None:
-            bbox = self.cal_bbox(score_map_ctr, size_map, offset_map)
+            bbox, max_score = self.cal_bbox(score_map_ctr, size_map, offset_map, return_score=True)
         else:
-            bbox = self.cal_bbox(gt_score_map.unsqueeze(1), size_map, offset_map)
+            bbox, max_score = self.cal_bbox(gt_score_map.unsqueeze(1), size_map, offset_map, return_score=True)
 
-        return score_map_ctr, bbox, size_map, offset_map
+        return score_map_ctr, bbox, size_map, offset_map, max_score
 
     def cal_bbox(self, score_map_ctr, size_map, offset_map, return_score=False):
         max_score, idx = torch.max(score_map_ctr.flatten(1), dim=1, keepdim=True)

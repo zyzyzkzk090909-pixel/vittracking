@@ -195,14 +195,15 @@ class ORTrack(nn.Module):
 
         elif self.head_type == "CENTER":
             # run the center head
-            score_map_ctr, bbox, size_map, offset_map = self.box_head(opt_feat, gt_score_map)
+            score_map_ctr, bbox, size_map, offset_map, score = self.box_head(opt_feat, gt_score_map)
             # outputs_coord = box_xyxy_to_cxcywh(bbox)
             outputs_coord = bbox
             outputs_coord_new = outputs_coord.view(bs, Nq, 4)
             out = {'pred_boxes': outputs_coord_new,
                    'score_map': score_map_ctr,
                    'size_map': size_map,
-                   'offset_map': offset_map}
+                   'offset_map': offset_map,
+                   'score': score}
             return out
         else:
             raise NotImplementedError

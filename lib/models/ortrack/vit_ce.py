@@ -32,7 +32,7 @@ class VisionTransformerCE(VisionTransformer):
                  num_heads=12, mlp_ratio=4., qkv_bias=True, representation_size=None, distilled=False,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0., embed_layer=PatchEmbed, norm_layer=None,
                  act_layer=None, weight_init='',
-                 ce_loc=None, ce_keep_ratio=None):
+                 ce_loc=None, ce_keep_ratio=None, num_patches_template=None):
         """
         Args:
             img_size (int, tuple): input image size
@@ -71,6 +71,7 @@ class VisionTransformerCE(VisionTransformer):
         self.patch_embed = embed_layer(
             img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim)
         num_patches = self.patch_embed.num_patches
+        self.num_patches_template = num_patches_template
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.dist_token = nn.Parameter(torch.zeros(1, 1, embed_dim)) if distilled else None
@@ -91,7 +92,7 @@ class VisionTransformerCE(VisionTransformer):
                 CEBlock(
                     dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, drop=drop_rate,
                     attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer, act_layer=act_layer,
-                    keep_ratio_search=ce_keep_ratio_i)
+                    keep_ratio_search=ce_keep_ratio_i, num_patches_template=num_patches_template)
             )
 
         self.blocks = nn.Sequential(*blocks)
@@ -148,7 +149,7 @@ class VisionTransformerCE(VisionTransformer):
         removed_indexes_s = []
         for i, blk in enumerate(self.blocks):
             x, global_index_t, global_index_s, removed_index_s, attn = \
-                blk(x, global_index_t, global_index_s, mask_x, ce_template_mask, ce_keep_rate)
+                blk(x, global_index_t, global_index_s, mask_x, ce_template_mask, ce_keep_rate, num_template=1)
 
             if self.ce_loc is not None and i in self.ce_loc:
                 removed_indexes_s.append(removed_index_s)
