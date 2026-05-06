@@ -32,7 +32,7 @@ class VisionTransformerCE(VisionTransformer):
                  num_heads=12, mlp_ratio=4., qkv_bias=True, representation_size=None, distilled=False,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0., embed_layer=PatchEmbed, norm_layer=None,
                  act_layer=None, weight_init='',
-                 ce_loc=None, ce_keep_ratio=None, num_patches_template=None):
+                 ce_loc=None, ce_keep_ratio=None, num_patches_template=None, num_template=1):
         """
         Args:
             img_size (int, tuple): input image size
@@ -72,6 +72,7 @@ class VisionTransformerCE(VisionTransformer):
             img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim)
         num_patches = self.patch_embed.num_patches
         self.num_patches_template = num_patches_template
+        self.num_template = num_template
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.dist_token = nn.Parameter(torch.zeros(1, 1, embed_dim)) if distilled else None
@@ -149,7 +150,7 @@ class VisionTransformerCE(VisionTransformer):
         removed_indexes_s = []
         for i, blk in enumerate(self.blocks):
             x, global_index_t, global_index_s, removed_index_s, attn = \
-                blk(x, global_index_t, global_index_s, mask_x, ce_template_mask, ce_keep_rate, num_template=1)
+                blk(x, global_index_t, global_index_s, mask_x, ce_template_mask, ce_keep_rate, num_template=self.num_template)
 
             if self.ce_loc is not None and i in self.ce_loc:
                 removed_indexes_s.append(removed_index_s)
