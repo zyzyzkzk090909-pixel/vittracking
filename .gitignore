@@ -1,0 +1,23 @@
+__pycache__/
+*.pyc
+
+# 模型（重点）
+*.pth
+*.pt
+*.pth.tar
+
+# 输出（重点）
+output/
+*.pth
+*.tar
+*.pth.tar
+__pycache__/
+*.pyc
+
+# 数据集（重点）
+data/
+dataset/
+
+# IDE
+.idea/
+venv/
