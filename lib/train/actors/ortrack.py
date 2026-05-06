@@ -52,17 +52,37 @@ class ORTrackActor(BaseActor):
         if len(template_list) == 1:
             template_list = template_list[0]
 
+        # Compute CE template mask and dynamic keep-rate when the backbone uses CE
+        ce_template_mask = None
+        ce_keep_rate = None
+        if (hasattr(self.cfg.MODEL.BACKBONE, 'CE_LOC')
+                and self.cfg.MODEL.BACKBONE.CE_LOC
+                and len(self.cfg.MODEL.BACKBONE.CE_LOC) > 0):
+            device = data['template_images'].device
+            bs = template_list.shape[0] if isinstance(template_list, torch.Tensor) else template_list[0].shape[0]
+            ce_template_mask = generate_mask_cond(self.cfg, bs, device, gt_bbox=None)
+            ce_keep_rate = adjust_keep_rate(
+                data['epoch'],
+                warmup_epochs=self.cfg.TRAIN.CE_START_EPOCH,
+                total_epochs=self.cfg.TRAIN.CE_START_EPOCH + self.cfg.TRAIN.CE_WARM_EPOCH,
+                ITERS_PER_EPOCH=1,
+                base_keep_rate=self.cfg.MODEL.BACKBONE.CE_KEEP_RATIO[-1],
+            )
+
         # ====distillation====
-        if self.net.is_distill_training:
+        if getattr(self.net, 'is_distill_training', False):
             with torch.no_grad():
                 out_dict_teacher = self.net_teacher(template=template_list,
                                                     search=search_img, is_distill=True)
         # ==========================
 
         out_dict = self.net(template=template_list,
-                            search=search_img, is_distill=False)
+                            search=search_img,
+                            ce_template_mask=ce_template_mask,
+                            ce_keep_rate=ce_keep_rate,
+                            is_distill=False)
 
-        if self.net.is_distill_training:
+        if getattr(self.net, 'is_distill_training', False):
             feat_teacher = out_dict_teacher['backbone_feat']
             feat_student = out_dict['backbone_feat']
             distill_loss = torch.tensor([torch.nn.functional.mse_loss(feat_teacher[i], feat_student[i]) for i in range(feat_student.shape[0])]).cuda()
@@ -100,7 +120,7 @@ class ORTrackActor(BaseActor):
 
         sim_loss = pred_dict['sim_loss']
 
-        if self.net.is_distill_training:
+        if getattr(self.net, 'is_distill_training', False):
             distill_loss = pred_dict['distill_loss']
             tau_0 = 10
             rho = 10

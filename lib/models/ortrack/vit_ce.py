@@ -225,3 +225,36 @@ def vit_large_patch16_224_ce(pretrained=False, **kwargs):
         patch_size=16, embed_dim=1024, depth=24, num_heads=16, **kwargs)
     model = _create_vision_transformer(pretrained=pretrained, **model_kwargs)
     return model
+
+
+def vit_tiny_patch16_224_ce(pretrained=False, **kwargs):
+    """ ViT-Tiny model (ViT-Ti/16) with Candidate Elimination.
+    Initialises from a standard ViT-Tiny checkpoint when *pretrained* is a path string,
+    or from the timm-registered weights when *pretrained* is True.
+    """
+    model_kwargs = dict(patch_size=16, embed_dim=192, depth=12, num_heads=3, **kwargs)
+    model = VisionTransformerCE(**model_kwargs)
+
+    if pretrained:
+        if isinstance(pretrained, str) and pretrained:
+            # Load from a local checkpoint file
+            if 'npz' in pretrained:
+                model.load_pretrained(pretrained, prefix='')
+            else:
+                checkpoint = torch.load(pretrained, map_location='cpu')
+                state_dict = checkpoint.get('model', checkpoint)
+                missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
+                print('Load pretrained model from: ' + pretrained)
+        else:
+            # Load from the standard timm tiny ViT to initialise shared weights
+            try:
+                import timm
+                timm_model = timm.create_model('vit_tiny_patch16_224', pretrained=True, num_classes=0)
+                missing_keys, unexpected_keys = model.load_state_dict(
+                    timm_model.state_dict(), strict=False)
+                del timm_model
+                print('Initialised vit_tiny_patch16_224_ce from timm vit_tiny_patch16_224 weights')
+            except Exception as e:
+                print(f'Warning: could not load timm pretrained weights: {e}')
+
+    return model
