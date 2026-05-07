@@ -16,6 +16,7 @@ import cv2
 from lib.models.ortrack.deit import deit_tiny_patch16_224, deit_tiny_patch16_224_distill
 from lib.models.ortrack.vision_transformer import vit_tiny_patch16_224, vit_tiny_distilled_patch16_224
 from lib.models.ortrack.eva import eva02_tiny_patch14_224, eva02_tiny_patch14_224_distill
+from lib.models.ortrack.vit_ce import vit_tiny_patch16_224_ce
 
 class ORTrack(nn.Module):
     """ This is the base class for ORTrack """
@@ -135,6 +136,8 @@ class ORTrack(nn.Module):
 
     def forward(self, template: torch.Tensor,
                 search: torch.Tensor,
+                ce_template_mask=None,
+                ce_keep_rate=None,
                 is_distill=False,
                 ):
 
@@ -155,10 +158,22 @@ class ORTrack(nn.Module):
                 mask = self.masking_CoxProcess(template.shape[0], intensity, 16, 0.3, template.device)
                 mask = mask.repeat(1,template.shape[1],1,1)
 
-        x, aux_dict = self.backbone(z=template, x=search)
+        # Route CE params only to backbones that support candidate elimination
+        use_ce = hasattr(self.backbone, 'ce_loc') and self.backbone.ce_loc is not None
+        if use_ce:
+            x, aux_dict = self.backbone(z=template, x=search,
+                                         ce_template_mask=ce_template_mask,
+                                         ce_keep_rate=ce_keep_rate)
+        else:
+            x, aux_dict = self.backbone(z=template, x=search)
 
         if self.training and not is_distill:
-            x1, aux_dict1 = self.backbone(z=template * mask, x=search)
+            if use_ce:
+                x1, aux_dict1 = self.backbone(z=template * mask, x=search,
+                                               ce_template_mask=ce_template_mask,
+                                               ce_keep_rate=ce_keep_rate)
+            else:
+                x1, aux_dict1 = self.backbone(z=template * mask, x=search)
             sim_loss = torch.nn.functional.mse_loss(x[:, :self.feat_len_t],x1[:, :self.feat_len_t].detach())
         else:
             sim_loss = 0
@@ -195,14 +210,15 @@ class ORTrack(nn.Module):
 
         elif self.head_type == "CENTER":
             # run the center head
-            score_map_ctr, bbox, size_map, offset_map = self.box_head(opt_feat, gt_score_map)
+            score_map_ctr, bbox, size_map, offset_map, score = self.box_head(opt_feat, gt_score_map)
             # outputs_coord = box_xyxy_to_cxcywh(bbox)
             outputs_coord = bbox
             outputs_coord_new = outputs_coord.view(bs, Nq, 4)
             out = {'pred_boxes': outputs_coord_new,
                    'score_map': score_map_ctr,
                    'size_map': size_map,
-                   'offset_map': offset_map}
+                   'offset_map': offset_map,
+                   'score': score}
             return out
         else:
             raise NotImplementedError
@@ -238,6 +254,17 @@ def build_ortrack(cfg, training=True):
         patch_start_index = 1
     elif cfg.MODEL.BACKBONE.TYPE == 'eva02_tiny_distilled_patch14_224':
         backbone = eva02_tiny_patch14_224_distill(num_classes=0, pretrained=True)
+        hidden_dim = backbone.embed_dim
+        patch_start_index = 1
+
+    elif cfg.MODEL.BACKBONE.TYPE == 'vit_tiny_patch16_224_ce':
+        backbone = vit_tiny_patch16_224_ce(
+            pretrained=True,
+            drop_path_rate=cfg.TRAIN.DROP_PATH_RATE,
+            ce_loc=cfg.MODEL.BACKBONE.CE_LOC,
+            ce_keep_ratio=cfg.MODEL.BACKBONE.CE_KEEP_RATIO,
+            num_patches_template=int(cfg.DATA.TEMPLATE.SIZE / cfg.MODEL.BACKBONE.STRIDE) ** 2,
+        )
         hidden_dim = backbone.embed_dim
         patch_start_index = 1
 

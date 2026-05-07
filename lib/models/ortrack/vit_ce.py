@@ -32,7 +32,7 @@ class VisionTransformerCE(VisionTransformer):
                  num_heads=12, mlp_ratio=4., qkv_bias=True, representation_size=None, distilled=False,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0., embed_layer=PatchEmbed, norm_layer=None,
                  act_layer=None, weight_init='',
-                 ce_loc=None, ce_keep_ratio=None):
+                 ce_loc=None, ce_keep_ratio=None, num_patches_template=None, num_template=1):
         """
         Args:
             img_size (int, tuple): input image size
@@ -71,6 +71,8 @@ class VisionTransformerCE(VisionTransformer):
         self.patch_embed = embed_layer(
             img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim)
         num_patches = self.patch_embed.num_patches
+        self.num_patches_template = num_patches_template
+        self.num_template = num_template
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.dist_token = nn.Parameter(torch.zeros(1, 1, embed_dim)) if distilled else None
@@ -91,7 +93,7 @@ class VisionTransformerCE(VisionTransformer):
                 CEBlock(
                     dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, drop=drop_rate,
                     attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer, act_layer=act_layer,
-                    keep_ratio_search=ce_keep_ratio_i)
+                    keep_ratio_search=ce_keep_ratio_i, num_patches_template=num_patches_template)
             )
 
         self.blocks = nn.Sequential(*blocks)
@@ -148,7 +150,7 @@ class VisionTransformerCE(VisionTransformer):
         removed_indexes_s = []
         for i, blk in enumerate(self.blocks):
             x, global_index_t, global_index_s, removed_index_s, attn = \
-                blk(x, global_index_t, global_index_s, mask_x, ce_template_mask, ce_keep_rate)
+                blk(x, global_index_t, global_index_s, mask_x, ce_template_mask, ce_keep_rate, num_template=self.num_template)
 
             if self.ce_loc is not None and i in self.ce_loc:
                 removed_indexes_s.append(removed_index_s)
@@ -222,4 +224,37 @@ def vit_large_patch16_224_ce(pretrained=False, **kwargs):
     model_kwargs = dict(
         patch_size=16, embed_dim=1024, depth=24, num_heads=16, **kwargs)
     model = _create_vision_transformer(pretrained=pretrained, **model_kwargs)
+    return model
+
+
+def vit_tiny_patch16_224_ce(pretrained=False, **kwargs):
+    """ ViT-Tiny model (ViT-Ti/16) with Candidate Elimination.
+    Initialises from a standard ViT-Tiny checkpoint when *pretrained* is a path string,
+    or from the timm-registered weights when *pretrained* is True.
+    """
+    model_kwargs = dict(patch_size=16, embed_dim=192, depth=12, num_heads=3, **kwargs)
+    model = VisionTransformerCE(**model_kwargs)
+
+    if pretrained:
+        if isinstance(pretrained, str):
+            # Load from a local checkpoint file
+            if 'npz' in pretrained:
+                model.load_pretrained(pretrained, prefix='')
+            else:
+                checkpoint = torch.load(pretrained, map_location='cpu')
+                state_dict = checkpoint.get('model', checkpoint)
+                missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
+                print('Load pretrained model from: ' + pretrained)
+        else:
+            # Load from the standard timm tiny ViT to initialise shared weights
+            try:
+                import timm
+                timm_model = timm.create_model('vit_tiny_patch16_224', pretrained=True, num_classes=0)
+                missing_keys, unexpected_keys = model.load_state_dict(
+                    timm_model.state_dict(), strict=False)
+                del timm_model
+                print('Initialised vit_tiny_patch16_224_ce from timm vit_tiny_patch16_224 weights')
+            except Exception as e:
+                print(f'Warning: could not load timm pretrained weights: {e}')
+
     return model
