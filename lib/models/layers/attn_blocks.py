@@ -36,7 +36,7 @@ def candidate_elimination(attn: torch.Tensor, tokens: torch.Tensor, lens_t: int,
     # (static) template's cross-attention to avoid noise from the dynamic template.
     if num_template > 1:
         if ori_lens_1z is None:
-            raise ValueError("ori_lens_1z must be provided when num_template > 1")
+            raise ValueError("ori_lens_1z (the number of patches in a single template) must be provided when num_template > 1 to correctly extract attention from the first template")
         attn_t = attn[:, :, :ori_lens_1z, lens_t:]
     else:
         attn_t = attn[:, :, :lens_t, lens_t:]

@@ -55,9 +55,7 @@ class ORTrackActor(BaseActor):
         # Compute CE template mask and dynamic keep-rate when the backbone uses CE
         ce_template_mask = None
         ce_keep_rate = None
-        if (hasattr(self.cfg.MODEL.BACKBONE, 'CE_LOC')
-                and self.cfg.MODEL.BACKBONE.CE_LOC
-                and len(self.cfg.MODEL.BACKBONE.CE_LOC) > 0):
+        if hasattr(self.cfg.MODEL.BACKBONE, 'CE_LOC') and self.cfg.MODEL.BACKBONE.CE_LOC:
             bs = template_list[0].shape[0]
             device = template_list[0].device
             ce_template_mask = generate_mask_cond(
@@ -87,7 +85,9 @@ class ORTrackActor(BaseActor):
         if getattr(self.net, 'is_distill_training', False):
             feat_teacher = out_dict_teacher['backbone_feat']
             feat_student = out_dict['backbone_feat']
-            distill_loss = torch.tensor([torch.nn.functional.mse_loss(feat_teacher[i], feat_student[i]) for i in range(feat_student.shape[0])]).cuda()
+            distill_loss = torch.stack(
+                [torch.nn.functional.mse_loss(feat_teacher[i], feat_student[i]) for i in range(feat_student.shape[0])]
+            ).to(feat_student.device)
             out_dict['distill_loss'] = distill_loss
 
         return out_dict

@@ -236,7 +236,7 @@ def vit_tiny_patch16_224_ce(pretrained=False, **kwargs):
     model = VisionTransformerCE(**model_kwargs)
 
     if pretrained:
-        if isinstance(pretrained, str) and pretrained:
+        if isinstance(pretrained, str):
             # Load from a local checkpoint file
             if 'npz' in pretrained:
                 model.load_pretrained(pretrained, prefix='')

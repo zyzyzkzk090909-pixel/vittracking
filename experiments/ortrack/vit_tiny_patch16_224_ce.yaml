@@ -47,7 +47,7 @@ MODEL:
     TYPE: vit_tiny_patch16_224_ce
     STRIDE: 16
     # Candidate Elimination settings
-    # Apply CE at layers 3, 6, 9 (0-indexed) of the 12-layer ViT-Tiny backbone
+    # Apply CE at blocks 4, 7, and 10 (indices 3, 6, and 9 in the 12-block backbone)
     CE_LOC:
     - 3
     - 6
