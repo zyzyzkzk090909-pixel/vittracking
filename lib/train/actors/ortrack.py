@@ -58,15 +58,17 @@ class ORTrackActor(BaseActor):
         if (hasattr(self.cfg.MODEL.BACKBONE, 'CE_LOC')
                 and self.cfg.MODEL.BACKBONE.CE_LOC
                 and len(self.cfg.MODEL.BACKBONE.CE_LOC) > 0):
-            device = data['template_images'].device
-            bs = template_list.shape[0] if isinstance(template_list, torch.Tensor) else template_list[0].shape[0]
-            ce_template_mask = generate_mask_cond(self.cfg, bs, device, gt_bbox=None)
+            bs = template_list[0].shape[0]
+            device = template_list[0].device
+            ce_template_mask = generate_mask_cond(
+                self.cfg, bs, device, data['template_anno'][0]
+            )
             ce_keep_rate = adjust_keep_rate(
                 data['epoch'],
                 warmup_epochs=self.cfg.TRAIN.CE_START_EPOCH,
                 total_epochs=self.cfg.TRAIN.CE_START_EPOCH + self.cfg.TRAIN.CE_WARM_EPOCH,
                 ITERS_PER_EPOCH=1,
-                base_keep_rate=self.cfg.MODEL.BACKBONE.CE_KEEP_RATIO[-1],
+                base_keep_rate=self.cfg.MODEL.BACKBONE.CE_KEEP_RATIO[0],
             )
 
         # ====distillation====
