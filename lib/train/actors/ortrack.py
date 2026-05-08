@@ -56,8 +56,12 @@ class ORTrackActor(BaseActor):
         ce_template_mask = None
         ce_keep_rate = None
         if hasattr(self.cfg.MODEL.BACKBONE, 'CE_LOC') and self.cfg.MODEL.BACKBONE.CE_LOC:
-            bs = template_list[0].shape[0]
-            device = template_list[0].device
+            if torch.is_tensor(template_list):
+                bs = template_list.shape[0]
+                device = template_list.device
+            else:
+                bs = template_list[0].shape[0]
+                device = template_list[0].device
             ce_template_mask = generate_mask_cond(
                 self.cfg, bs, device, data['template_anno'][0]
             )
