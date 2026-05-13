@@ -55,10 +55,11 @@ class ORTrackActor(BaseActor):
         if len(template_list) == 1:
             template_list = template_list[0]
 
-        # Compute CE template mask and dynamic keep-rate when the backbone uses CE
+        # Compute CE template mask and dynamic keep-rate when explicitly enabled
         ce_template_mask = None
         ce_keep_rate = None
-        if hasattr(self.cfg.MODEL.BACKBONE, 'CE_LOC') and self.cfg.MODEL.BACKBONE.CE_LOC:
+        use_ce = bool(getattr(self.cfg.MODEL, 'USE_CE', False)) and bool(getattr(self.cfg.MODEL.BACKBONE, 'CE_LOC', []))
+        if use_ce:
             bs = template_list[0].shape[0]
             device = template_list[0].device
             ce_template_mask = generate_mask_cond(
@@ -123,9 +124,14 @@ class ORTrackActor(BaseActor):
             location_loss = torch.tensor(0.0, device=l1_loss.device)
         # weighted sum
 
-        sim_loss = pred_dict['sim_loss']
+        sim_loss = pred_dict.get('sim_loss', torch.tensor(0.0, device=l1_loss.device))
+        if not bool(getattr(self.cfg.MODEL, 'USE_SIM_LOSS', False)):
+            sim_loss = torch.tensor(0.0, device=l1_loss.device)
+
         pro_loss = torch.tensor(0.0, device=l1_loss.device)
         pro_loss_weight = self.loss_weight.get('pro_loss', 0.0)
+        if not bool(getattr(self.cfg.MODEL, 'USE_PRO_LOSS', False)):
+            pro_loss_weight = 0.0
         if pro_loss_weight > 0 and 'pro' in pred_dict and 'cos_tensor' in pred_dict:
             pro = pred_dict['pro']
             cos_tensor = pred_dict['cos_tensor']
@@ -141,11 +147,11 @@ class ORTrackActor(BaseActor):
             distill_loss = coef * distill_loss
             distill_loss = distill_loss.mean()
             loss = self.loss_weight['giou'] * giou_loss + self.loss_weight['l1'] * l1_loss + \
-                   self.loss_weight['focal'] * location_loss + self.loss_weight['sim_loss'] * sim_loss + \
+                   self.loss_weight['focal'] * location_loss + self.loss_weight.get('sim_loss', 0.0) * sim_loss + \
                    pro_loss_weight * pro_loss + distill_loss
         else:
             loss = self.loss_weight['giou'] * giou_loss + self.loss_weight['l1'] * l1_loss + \
-                   self.loss_weight['focal'] * location_loss + self.loss_weight['sim_loss'] * sim_loss + \
+                   self.loss_weight['focal'] * location_loss + self.loss_weight.get('sim_loss', 0.0) * sim_loss + \
                    pro_loss_weight * pro_loss
         if return_status:
             # status for log

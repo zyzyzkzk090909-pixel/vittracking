@@ -74,14 +74,15 @@ class ORTrack(nn.Module):
 
     def simulate_ihhomogenous_Poisson_process(self, intensity):
         # Number of points to simulate
-        num_points = np.random.poisson(intensity.max()*np.prod(intensity.shape), 1)[0]
+        num_points = np.random.poisson(intensity.max() * np.prod(intensity.shape), 1)[0]
 
         # Generate random points according to an inhomogeneous Poisson process
-        x_points = (np.floor(np.random.uniform(0, intensity.shape[1], num_points))).astype(np.int32)
-        y_points = (np.floor(np.random.uniform(0, intensity.shape[0], num_points))).astype(np.int32)
+        x_points = np.floor(np.random.uniform(0, intensity.shape[1], num_points)).astype(np.int32)
+        y_points = np.floor(np.random.uniform(0, intensity.shape[0], num_points)).astype(np.int32)
 
         # Accept or reject points based on the rate function
-        accept_prob = intensity[x_points,y_points] / intensity.max()
+        # numpy image layout is [y, x]
+        accept_prob = intensity[y_points, x_points] / max(float(intensity.max()), 1e-12)
         accepted_points = np.random.rand(num_points) < accept_prob
 
         x_points = x_points[accepted_points]
@@ -111,12 +112,12 @@ class ORTrack(nn.Module):
 
     def masking_CoxProcess(self, N, intensity, block_sz, mask_ratio, device):
         H, W = intensity.shape
-        h = int(H/block_sz)
-        w = int(W/block_sz)
-        assert H % block_sz==0 & W % block_sz==0, 'H/block_sz is not int!'
+        h = int(H / block_sz)
+        w = int(W / block_sz)
+        assert H % block_sz == 0 and W % block_sz == 0, 'H/block_sz is not int!'
 
-        intensity = cv2.resize(intensity,dsize=(h, w))
-        intensity = intensity/intensity.sum()
+        intensity = cv2.resize(intensity, dsize=(w, h))
+        intensity = intensity / max(float(intensity.sum()), 1e-12)
 
         mask = self.random_masking_CoxProcess(intensity, N, int(h), int(w), mask_ratio, device)
         mask = torch.nn.functional.interpolate(mask.unsqueeze(1), size=(H, W), mode='nearest')
@@ -124,14 +125,13 @@ class ORTrack(nn.Module):
 
 
     def masking(self, template, block_sz, mask_ratio, device):
-        N,  D, H, W = template.shape
-        h = H/block_sz
-        w = W/block_sz
-        assert H % block_sz==0 & W % block_sz==0, 'H/block_sz is not int!'
+        N, D, H, W = template.shape
+        h = int(H / block_sz)
+        w = int(W / block_sz)
+        assert H % block_sz == 0 and W % block_sz == 0, 'H/block_sz is not int!'
 
         mask = self.random_masking(N, int(h), int(w), D, mask_ratio, device)
         mask = torch.nn.functional.interpolate(mask.unsqueeze(1), size=(H, W), mode='nearest')
-        # mask.to(template.device)
         return mask
 
 
@@ -159,8 +159,8 @@ class ORTrack(nn.Module):
                 mask = self.masking_CoxProcess(template.shape[0], intensity, 16, 0.3, template.device)
                 mask = mask.repeat(1,template.shape[1],1,1)
 
-        # Route CE params only to backbones that support candidate elimination
-        use_ce = hasattr(self.backbone, 'ce_loc') and self.backbone.ce_loc is not None
+        # Route CE params only to backbones that support candidate elimination and when enabled by config
+        use_ce = bool(getattr(getattr(self, 'cfg', None), 'MODEL', None)) and bool(getattr(self.cfg.MODEL, 'USE_CE', False)) and hasattr(self.backbone, 'ce_loc') and self.backbone.ce_loc is not None
         if use_ce:
             x, aux_dict = self.backbone(z=template, x=search,
                                          ce_template_mask=ce_template_mask,
@@ -168,16 +168,17 @@ class ORTrack(nn.Module):
         else:
             x, aux_dict = self.backbone(z=template, x=search)
 
-        if self.training and not is_distill:
+        use_sim_loss = self.training and not is_distill and bool(getattr(getattr(self, 'cfg', None), 'MODEL', None)) and bool(getattr(self.cfg.MODEL, 'USE_SIM_LOSS', False))
+        if use_sim_loss:
             if use_ce:
                 x1, aux_dict1 = self.backbone(z=template * mask, x=search,
                                                ce_template_mask=ce_template_mask,
                                                ce_keep_rate=ce_keep_rate)
             else:
                 x1, aux_dict1 = self.backbone(z=template * mask, x=search)
-            sim_loss = torch.nn.functional.mse_loss(x[:, :self.feat_len_t],x1[:, :self.feat_len_t].detach())
+            sim_loss = torch.nn.functional.mse_loss(x[:, :self.feat_len_t], x1[:, :self.feat_len_t].detach())
         else:
-            sim_loss = 0
+            sim_loss = torch.tensor(0.0, device=template.device)
 
         # Forward head
         feat_last = x
@@ -289,6 +290,7 @@ def build_ortrack(cfg, training=True):
         aux_loss=False,
         head_type=cfg.MODEL.HEAD.TYPE,
     )
+    model.cfg = cfg
 
     if 'ORTrack' in cfg.MODEL.PRETRAIN_FILE and training:
         checkpoint = torch.load(cfg.MODEL.PRETRAIN_FILE, map_location="cpu")

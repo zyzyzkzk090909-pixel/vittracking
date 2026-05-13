@@ -93,9 +93,16 @@ class ORTrack(BaseTracker):
         response = self.output_window * pred_score_map
         pred_boxes = self.network.box_head.cal_bbox(response, out_dict['size_map'], out_dict['offset_map'])
         pred_boxes = pred_boxes.view(-1, 4)
-        # Baseline: Take the mean of all pred boxes as the final result
-        pred_box = (pred_boxes.mean(
-            dim=0) * self.params.search_size / resize_factor).tolist()  # (cx, cy, w, h) [0,1]
+
+        # Use score-guided selection instead of blindly averaging boxes.
+        # When there is only one query this reduces to the original behavior.
+        score_flat = response.view(-1)
+        if score_flat.numel() == pred_boxes.shape[0]:
+            weights = torch.softmax(score_flat, dim=0).unsqueeze(-1)
+            pred_box = (pred_boxes * weights).sum(dim=0)
+        else:
+            pred_box = pred_boxes.mean(dim=0)
+        pred_box = (pred_box * self.params.search_size / resize_factor).tolist()  # (cx, cy, w, h) [0,1]
         # get the final box result
         self.state = clip_box(self.map_box_back(pred_box, resize_factor), H, W, margin=10)
 

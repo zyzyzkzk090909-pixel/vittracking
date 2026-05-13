@@ -34,7 +34,7 @@ DATA:
     SAMPLE_PER_EPOCH: 60000
   VAL:
     DATASETS_NAME:
-    - GOT10K_votval
+    - LASOT
     DATASETS_RATIO:
     - 1
     SAMPLE_PER_EPOCH: 10000
@@ -43,21 +43,20 @@ MODEL:
   IS_DISTILL: False
   EXTRA_MERGER: False
   RETURN_INTER: False
+  USE_SIM_LOSS: False
+  USE_TEMPLATE_MASK: False
+  USE_PRO_LOSS: False
+  USE_CE: True
   BACKBONE:
     TYPE: vit_tiny_patch16_224_ce
     STRIDE: 16
-    # Candidate Elimination settings
-    # Apply CE at blocks 4, 7, and 10 (indices 3, 6, and 9 in the 12-block backbone)
+    # Conservative CE for best accuracy: start later, prune lightly.
     CE_LOC:
-    - 3
     - 6
     - 9
-    # Keep 70 % of search tokens at each CE layer (warmup starts at 100 %)
     CE_KEEP_RATIO:
-    - 0.7
-    - 0.7
-    - 0.7
-    # Use the centre-point of the template feature map to guide elimination
+    - 0.9
+    - 0.9
     CE_TEMPLATE_RANGE: CTR_POINT
   HEAD:
     TYPE: CENTER
@@ -81,9 +80,8 @@ TRAIN:
   VAL_EPOCH_INTERVAL: 20
   WEIGHT_DECAY: 0.0001
   AMP: False
-  # CE warm-up schedule: no elimination for first 20 epochs,
-  # then cosine decay over the next 80 epochs to the target keep ratio
-  CE_START_EPOCH: 20
+  # Conservative CE schedule for accuracy-first training.
+  CE_START_EPOCH: 50
   CE_WARM_EPOCH: 80
 TEST:
   EPOCH: 300
