@@ -17,6 +17,7 @@ from lib.models.ortrack.deit import deit_tiny_patch16_224, deit_tiny_patch16_224
 from lib.models.ortrack.vision_transformer import vit_tiny_patch16_224, vit_tiny_distilled_patch16_224
 from lib.models.ortrack.eva import eva02_tiny_patch14_224, eva02_tiny_patch14_224_distill
 from lib.models.ortrack.vit_ce import vit_tiny_patch16_224_ce
+from lib.models.ortrack.base_backbone import configure_sgla
 
 class ORTrack(nn.Module):
     """ This is the base class for ORTrack """
@@ -278,6 +279,7 @@ def build_ortrack(cfg, training=True):
         pass
     else:
         backbone.finetune_track(cfg=cfg, patch_start_index=patch_start_index)
+    configure_sgla(backbone, cfg)
 
     box_head = build_box_head(cfg, hidden_dim)
 

@@ -93,7 +93,8 @@ def run(settings):
     if settings.script_name == "ortrack":
         focal_loss = FocalLoss()
         objective = {'giou': giou_loss, 'l1': l1_loss, 'focal': focal_loss, 'cls': BCEWithLogitsLoss()}
-        loss_weight = {'giou': cfg.TRAIN.GIOU_WEIGHT, 'l1': cfg.TRAIN.L1_WEIGHT, 'focal': 1., 'cls': 1.0,  'sim_loss': 0.0002, 'distill_loss': 0.00002}
+        loss_weight = {'giou': cfg.TRAIN.GIOU_WEIGHT, 'l1': cfg.TRAIN.L1_WEIGHT, 'focal': 1., 'cls': 1.0,
+                       'sim_loss': 0.0002, 'distill_loss': 0.00002, 'pro_loss': cfg.TRAIN.PRO_LOSS_WEIGHT}
         actor = ORTrackActor(net=net, objective=objective, loss_weight=loss_weight, settings=settings, cfg=cfg)
         if is_distill_training:
             actor.net_teacher = net_teacher

@@ -74,6 +74,7 @@ except:
     LayerType = Union[str, Callable, nn.Module]
 
 from lib.models.layers.patch_embed import PatchEmbed
+from lib.models.ortrack.base_backbone import collect_sgla_outputs, finalize_sgla_outputs
 
 __all__ = ['Eva']
 
@@ -608,11 +609,17 @@ class Eva(nn.Module):
 
         x = torch.cat((z, x), dim=1)
         x = self.pos_drop(x)
+        sgla_logits = []
+        sgla_cos_values = []
+        lens_z = self.pos_embed_z.shape[1]
+        lens_x = self.pos_embed_x.shape[1]
         for i, blk in enumerate(self.blocks):
             x = blk(x)
+            collect_sgla_outputs(self, i, x, lens_z, lens_x, sgla_logits, sgla_cos_values)
 
         x = self.norm(x)
         auc_dict = {'attn': None}
+        finalize_sgla_outputs(auc_dict, sgla_logits, sgla_cos_values)
         return x, auc_dict
 
     def forward_head(self, x, pre_logits: bool = False):
