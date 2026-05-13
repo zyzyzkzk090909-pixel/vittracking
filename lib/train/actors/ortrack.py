@@ -7,6 +7,8 @@ from ...utils.heapmap_utils import generate_heatmap
 from ...utils.ce_utils import generate_mask_cond, adjust_keep_rate
 import torch.nn.functional as F
 
+EPSILON = 1e-6
+
 
 class ORTrackActor(BaseActor):
     """ Actor for training ORTrack models """
@@ -129,7 +131,7 @@ class ORTrackActor(BaseActor):
             cos_tensor = pred_dict['cos_tensor']
             if torch.is_tensor(pro) and torch.is_tensor(cos_tensor) and pro.shape == cos_tensor.shape and pro.numel() > 0:
                 target = torch.softmax(cos_tensor.detach(), dim=1)
-                pro_loss = F.kl_div(torch.log(pro.clamp_min(1e-6)), target, reduction='batchmean')
+                pro_loss = F.kl_div(torch.log(pro.clamp_min(EPSILON)), target, reduction='batchmean')
 
         if getattr(self.net, 'is_distill_training', False):
             distill_loss = pred_dict['distill_loss']

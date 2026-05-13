@@ -618,9 +618,9 @@ class Eva(nn.Module):
             collect_sgla_outputs(self, i, x, lens_z, lens_x, sgla_logits, sgla_cos_values)
 
         x = self.norm(x)
-        auc_dict = {'attn': None}
-        finalize_sgla_outputs(auc_dict, sgla_logits, sgla_cos_values)
-        return x, auc_dict
+        aux_dict = {'attn': None}
+        finalize_sgla_outputs(aux_dict, sgla_logits, sgla_cos_values)
+        return x, aux_dict
 
     def forward_head(self, x, pre_logits: bool = False):
         if self.global_pool:

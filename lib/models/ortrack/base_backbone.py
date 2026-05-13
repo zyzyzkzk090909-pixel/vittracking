@@ -36,6 +36,10 @@ def configure_sgla(module, cfg):
     module.sgla_start_layer = start_layer
     module.sgla_enabled_layer_num = len(module.sgla_layer_indices)
     module.sgla_layer_gate = nn.Linear(module.embed_dim * 2, 1)
+    try:
+        module.sgla_layer_gate = module.sgla_layer_gate.to(next(module.parameters()).device)
+    except StopIteration:
+        pass
     trunc_normal_(module.sgla_layer_gate.weight, std=.02)
     if module.sgla_layer_gate.bias is not None:
         nn.init.zeros_(module.sgla_layer_gate.bias)
