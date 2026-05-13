@@ -94,6 +94,7 @@ _logger = logging.getLogger(__name__)
 
 from lib.models.ortrack.utils import combine_tokens, recover_tokens
 from lib.models.layers.patch_embed import PatchEmbed
+from lib.models.ortrack.base_backbone import collect_sgla_outputs, finalize_sgla_outputs
 
 class Attention(nn.Module):
     fused_attn: Final[bool]
@@ -728,14 +729,18 @@ class VisionTransformer(nn.Module):
 
         x = self.pos_drop(x)
 
-        for i, blk in enumerate(self.blocks):
-            x = blk(x)
-
+        sgla_logits = []
+        sgla_cos_values = []
         lens_z = self.pos_embed_z.shape[1]
         lens_x = self.pos_embed_x.shape[1]
+        for i, blk in enumerate(self.blocks):
+            x = blk(x)
+            collect_sgla_outputs(self, i, x, lens_z, lens_x, sgla_logits, sgla_cos_values)
+
         x = recover_tokens(x, lens_z, lens_x)
 
         aux_dict = {"attn": None}
+        finalize_sgla_outputs(aux_dict, sgla_logits, sgla_cos_values)
         return self.norm(x), aux_dict
 
     def forward_head(self, x: torch.Tensor, pre_logits: bool = False) -> torch.Tensor:

@@ -12,6 +12,7 @@ from timm.models.layers import to_2tuple
 
 from lib.models.layers.patch_embed import PatchEmbed
 from .utils import combine_tokens, recover_tokens
+from .base_backbone import collect_sgla_outputs, finalize_sgla_outputs
 from .vit import VisionTransformer
 from ..layers.attn_blocks import CEBlock
 
@@ -148,9 +149,12 @@ class VisionTransformerCE(VisionTransformer):
         global_index_s = torch.linspace(0, lens_x - 1, lens_x).to(x.device)
         global_index_s = global_index_s.repeat(B, 1)
         removed_indexes_s = []
+        sgla_logits = []
+        sgla_cos_values = []
         for i, blk in enumerate(self.blocks):
             x, global_index_t, global_index_s, removed_index_s, attn = \
                 blk(x, global_index_t, global_index_s, mask_x, ce_template_mask, ce_keep_rate, num_template=self.num_template)
+            collect_sgla_outputs(self, i, x, global_index_t.shape[1], global_index_s.shape[1], sgla_logits, sgla_cos_values)
 
             if self.ce_loc is not None and i in self.ce_loc:
                 removed_indexes_s.append(removed_index_s)
@@ -183,6 +187,7 @@ class VisionTransformerCE(VisionTransformer):
             "attn": attn,
             "removed_indexes_s": removed_indexes_s,  # used for visualization
         }
+        finalize_sgla_outputs(aux_dict, sgla_logits, sgla_cos_values)
 
         return x, aux_dict
 

@@ -10,6 +10,71 @@ from lib.models.layers.patch_embed import PatchEmbed
 from lib.models.ortrack.utils import combine_tokens, recover_tokens
 
 
+def configure_sgla(module, cfg):
+    module.sgla_enable = bool(getattr(cfg.MODEL.BACKBONE, 'SGLA_ENABLE', False))
+    module.sgla_start_layer = int(getattr(cfg.MODEL.BACKBONE, 'SGLA_START_LAYER', 0))
+    module.sgla_enabled_layer_num = int(getattr(cfg.MODEL.BACKBONE, 'SGLA_ENABLED_LAYER_NUM', 0))
+    module.sgla_layer_indices = []
+    module.sgla_layer_gate = None
+
+    if not module.sgla_enable:
+        return
+
+    total_blocks = len(getattr(module, 'blocks', []))
+    if total_blocks <= 0:
+        module.sgla_enable = False
+        return
+
+    start_layer = max(0, min(module.sgla_start_layer, total_blocks - 1))
+    enabled_layer_num = module.sgla_enabled_layer_num if module.sgla_enabled_layer_num > 0 else total_blocks - start_layer
+    end_layer = min(total_blocks, start_layer + enabled_layer_num)
+    module.sgla_layer_indices = list(range(start_layer, end_layer))
+    if not module.sgla_layer_indices:
+        module.sgla_enable = False
+        return
+
+    module.sgla_start_layer = start_layer
+    module.sgla_enabled_layer_num = len(module.sgla_layer_indices)
+    module.sgla_layer_gate = nn.Linear(module.embed_dim * 2, 1)
+    try:
+        module.sgla_layer_gate = module.sgla_layer_gate.to(next(module.parameters()).device)
+    except StopIteration:
+        pass
+    trunc_normal_(module.sgla_layer_gate.weight, std=.02)
+    if module.sgla_layer_gate.bias is not None:
+        nn.init.zeros_(module.sgla_layer_gate.bias)
+
+
+def collect_sgla_outputs(module, layer_idx, tokens, lens_z, lens_x, logits, cos_values):
+    if not getattr(module, 'sgla_enable', False):
+        return
+    if getattr(module, 'sgla_layer_gate', None) is None or layer_idx not in getattr(module, 'sgla_layer_indices', []):
+        return
+
+    has_cls_token = getattr(module, 'add_cls_token', False) and tokens.shape[1] == lens_z + lens_x + 1
+    start_idx = 1 if has_cls_token else 0
+    template_tokens = tokens[:, start_idx:start_idx + lens_z]
+    search_tokens = tokens[:, start_idx + lens_z:start_idx + lens_z + lens_x]
+    if template_tokens.numel() == 0 or search_tokens.numel() == 0:
+        return
+
+    template_summary = template_tokens.mean(dim=1)
+    search_summary = search_tokens.mean(dim=1)
+    layer_feature = torch.cat([template_summary, search_summary], dim=-1)
+
+    logits.append(module.sgla_layer_gate(layer_feature).squeeze(-1))
+    cos_values.append(F.cosine_similarity(template_summary, search_summary, dim=-1))
+
+
+def finalize_sgla_outputs(aux_dict, logits, cos_values):
+    if logits and cos_values:
+        logits = torch.stack(logits, dim=1)
+        cos_tensor = torch.stack(cos_values, dim=1)
+        aux_dict["pro"] = torch.softmax(logits, dim=1)
+        aux_dict["cos_tensor"] = cos_tensor
+    return aux_dict
+
+
 class BaseBackbone(nn.Module):
     def __init__(self):
         super().__init__()
@@ -33,6 +98,11 @@ class BaseBackbone(nn.Module):
 
         self.add_cls_token = False
         self.add_sep_seg = False
+        self.sgla_enable = False
+        self.sgla_start_layer = 0
+        self.sgla_enabled_layer_num = 0
+        self.sgla_layer_indices = []
+        self.sgla_layer_gate = None
 
     def finetune_track(self, cfg, patch_start_index=1):
 
@@ -130,14 +200,18 @@ class BaseBackbone(nn.Module):
 
         x = self.pos_drop(x)
 
-        for i, blk in enumerate(self.blocks):
-            x = blk(x)
-
+        sgla_logits = []
+        sgla_cos_values = []
         lens_z = self.pos_embed_z.shape[1]
         lens_x = self.pos_embed_x.shape[1]
+        for i, blk in enumerate(self.blocks):
+            x = blk(x)
+            collect_sgla_outputs(self, i, x, lens_z, lens_x, sgla_logits, sgla_cos_values)
+
         x = recover_tokens(x, lens_z, lens_x, mode=self.cat_mode)
 
         aux_dict = {"attn": None}
+        finalize_sgla_outputs(aux_dict, sgla_logits, sgla_cos_values)
         return self.norm(x), aux_dict
 
     def forward(self, z, x, **kwargs):

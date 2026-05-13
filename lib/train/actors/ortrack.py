@@ -5,6 +5,9 @@ import torch
 from lib.utils.merge import merge_template_search
 from ...utils.heapmap_utils import generate_heatmap
 from ...utils.ce_utils import generate_mask_cond, adjust_keep_rate
+import torch.nn.functional as F
+
+EPSILON = 1e-6
 
 
 class ORTrackActor(BaseActor):
@@ -121,6 +124,14 @@ class ORTrackActor(BaseActor):
         # weighted sum
 
         sim_loss = pred_dict['sim_loss']
+        pro_loss = torch.tensor(0.0, device=l1_loss.device)
+        pro_loss_weight = self.loss_weight.get('pro_loss', 0.0)
+        if pro_loss_weight > 0 and 'pro' in pred_dict and 'cos_tensor' in pred_dict:
+            pro = pred_dict['pro']
+            cos_tensor = pred_dict['cos_tensor']
+            if torch.is_tensor(pro) and torch.is_tensor(cos_tensor) and pro.shape == cos_tensor.shape and pro.numel() > 0:
+                target = torch.softmax(cos_tensor.detach(), dim=1)
+                pro_loss = F.kl_div(torch.log(pro.clamp_min(EPSILON)), target, reduction='batchmean')
 
         if getattr(self.net, 'is_distill_training', False):
             distill_loss = pred_dict['distill_loss']
@@ -129,9 +140,13 @@ class ORTrackActor(BaseActor):
             coef = self.loss_weight['distill_loss'] * (tau_0 + rho * ((1 - giou) - (1 - giou).mean()))
             distill_loss = coef * distill_loss
             distill_loss = distill_loss.mean()
-            loss = self.loss_weight['giou'] * giou_loss + self.loss_weight['l1'] * l1_loss + self.loss_weight['focal'] * location_loss + self.loss_weight['sim_loss'] * sim_loss + distill_loss
+            loss = self.loss_weight['giou'] * giou_loss + self.loss_weight['l1'] * l1_loss + \
+                   self.loss_weight['focal'] * location_loss + self.loss_weight['sim_loss'] * sim_loss + \
+                   pro_loss_weight * pro_loss + distill_loss
         else:
-            loss = self.loss_weight['giou'] * giou_loss + self.loss_weight['l1'] * l1_loss + self.loss_weight['focal'] * location_loss + self.loss_weight['sim_loss'] * sim_loss
+            loss = self.loss_weight['giou'] * giou_loss + self.loss_weight['l1'] * l1_loss + \
+                   self.loss_weight['focal'] * location_loss + self.loss_weight['sim_loss'] * sim_loss + \
+                   pro_loss_weight * pro_loss
         if return_status:
             # status for log
             mean_iou = iou.detach().mean()
@@ -139,6 +154,7 @@ class ORTrackActor(BaseActor):
                       "Loss/giou": giou_loss.item(),
                       "Loss/l1": l1_loss.item(),
                       "Loss/location": location_loss.item(),
+                      "Loss/pro": pro_loss.item(),
                       "IoU": mean_iou.item()}
             return loss, status
         else:

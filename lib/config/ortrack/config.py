@@ -29,6 +29,9 @@ cfg.MODEL.BACKBONE.CLS_TOKEN_USE_MODE = 'ignore'
 cfg.MODEL.BACKBONE.CE_LOC = []
 cfg.MODEL.BACKBONE.CE_KEEP_RATIO = []
 cfg.MODEL.BACKBONE.CE_TEMPLATE_RANGE = 'ALL'  # choose between ALL, CTR_POINT, CTR_REC, GT_BOX
+cfg.MODEL.BACKBONE.SGLA_ENABLE = False
+cfg.MODEL.BACKBONE.SGLA_START_LAYER = 0
+cfg.MODEL.BACKBONE.SGLA_ENABLED_LAYER_NUM = 0
 
 # MODEL.HEAD
 cfg.MODEL.HEAD = edict()
@@ -56,6 +59,7 @@ cfg.TRAIN.AMP = False
 cfg.TRAIN.CE_START_EPOCH = 20  # candidate elimination start epoch
 cfg.TRAIN.CE_WARM_EPOCH = 80  # candidate elimination warm up epoch
 cfg.TRAIN.DROP_PATH_RATE = 0.1  # drop path rate for ViT backbone
+cfg.TRAIN.PRO_LOSS_WEIGHT = 0.0
 
 # TRAIN.SCHEDULER
 cfg.TRAIN.SCHEDULER = edict()
