@@ -51,7 +51,8 @@ def collect_sgla_outputs(module, layer_idx, tokens, lens_z, lens_x, logits, cos_
     if getattr(module, 'sgla_layer_gate', None) is None or layer_idx not in getattr(module, 'sgla_layer_indices', []):
         return
 
-    start_idx = 1 if getattr(module, 'add_cls_token', False) and tokens.shape[1] > lens_z + lens_x else 0
+    has_cls_token = getattr(module, 'add_cls_token', False) and tokens.shape[1] == lens_z + lens_x + 1
+    start_idx = 1 if has_cls_token else 0
     template_tokens = tokens[:, start_idx:start_idx + lens_z]
     search_tokens = tokens[:, start_idx + lens_z:start_idx + lens_z + lens_x]
     if template_tokens.numel() == 0 or search_tokens.numel() == 0:
