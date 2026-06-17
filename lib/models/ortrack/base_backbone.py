@@ -45,6 +45,32 @@ def configure_sgla(module, cfg):
         nn.init.zeros_(module.sgla_layer_gate.bias)
 
 
+def configure_cropr(module, cfg):
+    module.cropr_enable = bool(getattr(cfg.MODEL, 'USE_CROPR', False))
+    module.cropr_start_layer = int(getattr(cfg.MODEL.BACKBONE, 'CROPR_START_LAYER', 0))
+    module.cropr_enabled_layer_num = int(getattr(cfg.MODEL.BACKBONE, 'CROPR_ENABLED_LAYER_NUM', 0))
+    module.cropr_keep_ratio = float(getattr(cfg.MODEL.BACKBONE, 'CROPR_KEEP_RATIO', 1.0))
+    module.cropr_layer_indices = []
+
+    if not module.cropr_enable:
+        return
+
+    total_blocks = len(getattr(module, 'blocks', []))
+    if total_blocks <= 0:
+        module.cropr_enable = False
+        return
+
+    start_layer = max(0, min(module.cropr_start_layer, total_blocks - 1))
+    enabled_layer_num = module.cropr_enabled_layer_num if module.cropr_enabled_layer_num > 0 else total_blocks - start_layer
+    end_layer = min(total_blocks, start_layer + enabled_layer_num)
+    module.cropr_layer_indices = list(range(start_layer, end_layer))
+    if not module.cropr_layer_indices:
+        module.cropr_enable = False
+        return
+
+    module.cropr_start_layer = start_layer
+    module.cropr_enabled_layer_num = len(module.cropr_layer_indices)
+
 def collect_sgla_outputs(module, layer_idx, tokens, lens_z, lens_x, logits, cos_values):
     if not getattr(module, 'sgla_enable', False):
         return

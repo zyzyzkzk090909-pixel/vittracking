@@ -17,7 +17,7 @@ from lib.models.ortrack.deit import deit_tiny_patch16_224, deit_tiny_patch16_224
 from lib.models.ortrack.vision_transformer import vit_tiny_patch16_224, vit_tiny_distilled_patch16_224
 from lib.models.ortrack.eva import eva02_tiny_patch14_224, eva02_tiny_patch14_224_distill
 from lib.models.ortrack.vit_ce import vit_tiny_patch16_224_ce
-from lib.models.ortrack.base_backbone import configure_sgla
+from lib.models.ortrack.base_backbone import configure_sgla, configure_cropr
 
 class ORTrack(nn.Module):
     """ This is the base class for ORTrack """
@@ -142,40 +142,95 @@ class ORTrack(nn.Module):
                 is_distill=False,
                 ):
 
-        if not is_distill:
-            if self.training and self.randomMask == True:
+        use_sim_loss = self.training and not is_distill and bool(getattr(self.cfg.MODEL, 'USE_SIM_LOSS', False))
+        use_template_mask = self.training and not is_distill and bool(getattr(self.cfg.MODEL, 'USE_TEMPLATE_MASK', False))
+        use_ce = bool(getattr(self.cfg.MODEL, 'USE_CE', False)) and hasattr(self.backbone, 'ce_loc') and self.backbone.ce_loc is not None
+
+        mask = None
+        token_mask = ce_template_mask
+
+        # Generate mask if we want to apply it to the main forward (i.e. if not using sim_loss)
+        if use_template_mask and not use_sim_loss:
+            if self.randomMask:
                 mask = self.masking(template, 16, 0.3, template.device)
-                mask = mask.repeat(1,template.shape[1],1,1)
-            elif self.training:
+                mask = mask.repeat(1, template.shape[1], 1, 1)
+            else:
                 if len(self.intensity) == 0:
-                    template_r = int(template.shape[-1]/2)
+                    template_r = int(template.shape[-1] / 2)
                     sigma = 64
-                    x, y = np.mgrid[-template_r:template_r:1, -template_r:template_r:1]
-                    pos = np.dstack((x, y))
-                    intensity = multivariate_normal([0.0, 0.], [[sigma*template_r, 0.0], [0.0, sigma*template_r]]).pdf(pos)
-                    intensity = intensity/intensity.sum()
+                    x_grid, y_grid = np.mgrid[-template_r:template_r:1, -template_r:template_r:1]
+                    pos = np.dstack((x_grid, y_grid))
+                    intensity = multivariate_normal([0.0, 0.0], [[sigma * template_r, 0.0], [0.0, sigma * template_r]]).pdf(pos)
+                    intensity = intensity / max(float(intensity.sum()), 1e-12)
                 else:
                     intensity = self.intensity
                 mask = self.masking_CoxProcess(template.shape[0], intensity, 16, 0.3, template.device)
-                mask = mask.repeat(1,template.shape[1],1,1)
-
-        # Route CE params only to backbones that support candidate elimination and when enabled by config
-        use_ce = bool(getattr(getattr(self, 'cfg', None), 'MODEL', None)) and bool(getattr(self.cfg.MODEL, 'USE_CE', False)) and hasattr(self.backbone, 'ce_loc') and self.backbone.ce_loc is not None
-        if use_ce:
-            x, aux_dict = self.backbone(z=template, x=search,
-                                         ce_template_mask=ce_template_mask,
-                                         ce_keep_rate=ce_keep_rate)
-        else:
-            x, aux_dict = self.backbone(z=template, x=search)
-
-        use_sim_loss = self.training and not is_distill and bool(getattr(getattr(self, 'cfg', None), 'MODEL', None)) and bool(getattr(self.cfg.MODEL, 'USE_SIM_LOSS', False))
-        if use_sim_loss:
+                mask = mask.repeat(1, template.shape[1], 1, 1)
+            
             if use_ce:
-                x1, aux_dict1 = self.backbone(z=template * mask, x=search,
-                                               ce_template_mask=ce_template_mask,
-                                               ce_keep_rate=ce_keep_rate)
+                # Convert the image spatial mask [B, 3, H, W] to boolean token mask [B, L_t]
+                B, C, H, W = mask.shape
+                # Pool mask to shape [B, 1, H/16, W/16]
+                mask_pooled = torch.nn.functional.avg_pool2d(mask[:, 0:1, :, :], kernel_size=16, stride=16)
+                occlusion_mask = (mask_pooled.view(B, -1) > 0.5)
+                if token_mask is not None:
+                    # Combine original CE CTR mask with occlusion mask
+                    token_mask = token_mask & occlusion_mask
+                else:
+                    token_mask = occlusion_mask
+
+        z_main = template * mask if mask is not None else template
+
+        if use_ce:
+            x, aux_dict = self.backbone(
+                z=z_main,
+                x=search,
+                ce_template_mask=token_mask,
+                ce_keep_rate=ce_keep_rate,
+            )
+        else:
+            x, aux_dict = self.backbone(z=z_main, x=search)
+
+        if use_sim_loss:
+            mask2 = None
+            token_mask2 = ce_template_mask
+            if use_template_mask:
+                if self.randomMask:
+                    mask2 = self.masking(template, 16, 0.3, template.device)
+                    mask2 = mask2.repeat(1, template.shape[1], 1, 1)
+                else:
+                    if len(self.intensity) == 0:
+                        template_r = int(template.shape[-1] / 2)
+                        sigma = 64
+                        x_grid, y_grid = np.mgrid[-template_r:template_r:1, -template_r:template_r:1]
+                        pos = np.dstack((x_grid, y_grid))
+                        intensity = multivariate_normal([0.0, 0.0], [[sigma * template_r, 0.0], [0.0, sigma * template_r]]).pdf(pos)
+                        intensity = intensity / max(float(intensity.sum()), 1e-12)
+                    else:
+                        intensity = self.intensity
+                    mask2 = self.masking_CoxProcess(template.shape[0], intensity, 16, 0.3, template.device)
+                    mask2 = mask2.repeat(1, template.shape[1], 1, 1)
+                
+                if use_ce:
+                    B, C, H, W = mask2.shape
+                    mask_pooled = torch.nn.functional.avg_pool2d(mask2[:, 0:1, :, :], kernel_size=16, stride=16)
+                    occlusion_mask2 = (mask_pooled.view(B, -1) > 0.5)
+                    if token_mask2 is not None:
+                        token_mask2 = token_mask2 & occlusion_mask2
+                    else:
+                        token_mask2 = occlusion_mask2
             else:
-                x1, aux_dict1 = self.backbone(z=template * mask, x=search)
+                mask2 = torch.ones_like(template)
+
+            if use_ce:
+                x1, _ = self.backbone(
+                    z=template * mask2,
+                    x=search,
+                    ce_template_mask=token_mask2,
+                    ce_keep_rate=ce_keep_rate,
+                )
+            else:
+                x1, _ = self.backbone(z=template * mask2, x=search)
             sim_loss = torch.nn.functional.mse_loss(x[:, :self.feat_len_t], x1[:, :self.feat_len_t].detach())
         else:
             sim_loss = torch.tensor(0.0, device=template.device)
@@ -234,6 +289,18 @@ def build_ortrack(cfg, training=True):
     else:
         pretrained = ''
 
+    def _try_load_timm_vit_tiny_ce(model):
+        try:
+            import timm
+            timm_model = timm.create_model('vit_tiny_patch16_224', pretrained=True, num_classes=0)
+            missing_keys, unexpected_keys = model.load_state_dict(timm_model.state_dict(), strict=False)
+            del timm_model
+            print('Initialised vit_tiny_patch16_224_ce from timm vit_tiny_patch16_224 weights')
+            return True
+        except Exception as e:
+            print(f'Warning: could not load timm pretrained weights: {e}')
+            return False
+
     if cfg.MODEL.BACKBONE.TYPE == 'deit_tiny_patch16_224':
         backbone = deit_tiny_patch16_224(num_classes=0, pretrained=True)
         hidden_dim = backbone.embed_dim
@@ -261,7 +328,7 @@ def build_ortrack(cfg, training=True):
 
     elif cfg.MODEL.BACKBONE.TYPE == 'vit_tiny_patch16_224_ce':
         backbone = vit_tiny_patch16_224_ce(
-            pretrained=True,
+            pretrained=False,
             drop_path_rate=cfg.TRAIN.DROP_PATH_RATE,
             ce_loc=cfg.MODEL.BACKBONE.CE_LOC,
             ce_keep_ratio=cfg.MODEL.BACKBONE.CE_KEEP_RATIO,
@@ -281,6 +348,7 @@ def build_ortrack(cfg, training=True):
     else:
         backbone.finetune_track(cfg=cfg, patch_start_index=patch_start_index)
     configure_sgla(backbone, cfg)
+    configure_cropr(backbone, cfg)
 
     box_head = build_box_head(cfg, hidden_dim)
 
@@ -291,6 +359,9 @@ def build_ortrack(cfg, training=True):
         head_type=cfg.MODEL.HEAD.TYPE,
     )
     model.cfg = cfg
+
+    if cfg.MODEL.BACKBONE.TYPE == 'vit_tiny_patch16_224_ce':
+        _try_load_timm_vit_tiny_ce(model.backbone)
 
     if 'ORTrack' in cfg.MODEL.PRETRAIN_FILE and training:
         checkpoint = torch.load(cfg.MODEL.PRETRAIN_FILE, map_location="cpu")

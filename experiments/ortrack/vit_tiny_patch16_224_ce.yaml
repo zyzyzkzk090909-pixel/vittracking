@@ -43,21 +43,26 @@ MODEL:
   IS_DISTILL: False
   EXTRA_MERGER: False
   RETURN_INTER: False
-  USE_SIM_LOSS: False
+  USE_SIM_LOSS: True
   USE_TEMPLATE_MASK: False
-  USE_PRO_LOSS: False
+  USE_PRO_LOSS: True
   USE_CE: True
+  USE_SGLA: True
+  USE_CROPR: True
   BACKBONE:
     TYPE: vit_tiny_patch16_224_ce
     STRIDE: 16
-    # Conservative CE for best accuracy: start later, prune lightly.
     CE_LOC:
-    - 6
     - 9
     CE_KEEP_RATIO:
-    - 0.9
-    - 0.9
+    - 0.95
     CE_TEMPLATE_RANGE: CTR_POINT
+    SGLA_ENABLE: True
+    SGLA_START_LAYER: 6
+    SGLA_ENABLED_LAYER_NUM: 4
+    CROPR_START_LAYER: 8
+    CROPR_ENABLED_LAYER_NUM: 2
+    CROPR_KEEP_RATIO: 0.90
   HEAD:
     TYPE: CENTER
     NUM_CHANNELS: 256
@@ -65,7 +70,7 @@ TRAIN:
   BACKBONE_MULTIPLIER: 0.1
   DROP_PATH_RATE: 0.1
   BATCH_SIZE: 32
-  EPOCH: 300
+  EPOCH: 400
   GIOU_WEIGHT: 2.0
   L1_WEIGHT: 5.0
   GRAD_CLIP_NORM: 0.1
@@ -74,13 +79,14 @@ TRAIN:
   NUM_WORKER: 10
   OPTIMIZER: ADAMW
   PRINT_INTERVAL: 50
+  PRO_LOSS_WEIGHT: 0.05
+  CROPR_LOSS_WEIGHT: 0.02
   SCHEDULER:
     TYPE: step
     DECAY_RATE: 0.1
   VAL_EPOCH_INTERVAL: 20
   WEIGHT_DECAY: 0.0001
   AMP: False
-  # Conservative CE schedule for accuracy-first training.
   CE_START_EPOCH: 50
   CE_WARM_EPOCH: 80
 TEST:

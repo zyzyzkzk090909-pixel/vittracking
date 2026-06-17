@@ -32,12 +32,17 @@ cfg.MODEL.BACKBONE.CE_TEMPLATE_RANGE = 'ALL'  # choose between ALL, CTR_POINT, C
 cfg.MODEL.BACKBONE.SGLA_ENABLE = False
 cfg.MODEL.BACKBONE.SGLA_START_LAYER = 0
 cfg.MODEL.BACKBONE.SGLA_ENABLED_LAYER_NUM = 0
+cfg.MODEL.BACKBONE.CROPR_START_LAYER = 0
+cfg.MODEL.BACKBONE.CROPR_ENABLED_LAYER_NUM = 0
+cfg.MODEL.BACKBONE.CROPR_KEEP_RATIO = 1.0
 
 # Loss / augmentation switches
 cfg.MODEL.USE_SIM_LOSS = False
 cfg.MODEL.USE_TEMPLATE_MASK = False
 cfg.MODEL.USE_PRO_LOSS = False
 cfg.MODEL.USE_CE = False
+cfg.MODEL.USE_SGLA = False
+cfg.MODEL.USE_CROPR = False
 
 # MODEL.HEAD
 cfg.MODEL.HEAD = edict()
@@ -66,6 +71,7 @@ cfg.TRAIN.CE_START_EPOCH = 20  # candidate elimination start epoch
 cfg.TRAIN.CE_WARM_EPOCH = 80  # candidate elimination warm up epoch
 cfg.TRAIN.DROP_PATH_RATE = 0.1  # drop path rate for ViT backbone
 cfg.TRAIN.PRO_LOSS_WEIGHT = 0.0
+cfg.TRAIN.CROPR_LOSS_WEIGHT = 0.0
 
 # TRAIN.SCHEDULER
 cfg.TRAIN.SCHEDULER = edict()
